@@ -1,9 +1,30 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/ioctl.h>   /* _IO, _IOW  */
 #include <sys/syscall.h>  /* __NR_memfd_create,  */
-#include <linux/ashmem.h> /* ASHMEM_GET_SIZE,  */
-#include <linux/memfd.h>  /* MFD_CLOEXEC  */
+
+/* linux/ashmem.h is an Android-specific kernel header not present on
+ * standard Linux distributions.  Define the ioctl constants we need
+ * directly so the build works on both Android NDK and regular Linux.  */
+#ifndef ASHMEM_SET_SIZE
+# define ASHMEM_SET_SIZE  _IOW(0x77, 3, size_t)
+#endif
+#ifndef ASHMEM_GET_SIZE
+# define ASHMEM_GET_SIZE  _IO(0x77, 4)
+#endif
+
+/* linux/memfd.h may not be present on older kernel header packages.  */
+#ifdef __has_include
+# if __has_include(<linux/memfd.h>)
+#  include <linux/memfd.h>
+# endif
+#else
+# include <linux/memfd.h>
+#endif
+#ifndef MFD_CLOEXEC
+# define MFD_CLOEXEC 1U
+#endif
 
 #include <talloc.h>
 
