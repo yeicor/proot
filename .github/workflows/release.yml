@@ -92,6 +92,8 @@ jobs:
         env:
           LDFLAGS: "-static"
         run: |
+          # HAS_SWIG= disables the Python extension, which cannot be statically linked
+          # without pulling in all of libpython's transitive dependencies (zlib, etc.)
           make -C src proot GIT=false V=1 HAS_SWIG=
 
       # =========================================================
@@ -131,6 +133,8 @@ jobs:
         env:
           LDFLAGS: "-static"
         run: |
+          # HAS_SWIG= disables the Python extension, which cannot be statically linked
+          # without pulling in all of libpython's transitive dependencies (zlib, etc.)
           PKG_CONFIG_LIBDIR="${TALLOC_PREFIX}/lib/pkgconfig" \
           make -C src proot GIT=false V=1 HAS_SWIG= \
             CROSS_COMPILE="${{ matrix.cross_prefix }}"
@@ -192,6 +196,8 @@ jobs:
           NDK_OBJCOPY="${TOOLCHAIN}/bin/llvm-objcopy"
           NDK_OBJDUMP="${TOOLCHAIN}/bin/llvm-objdump"
 
+          # HAS_SWIG= disables the Python extension, which cannot be statically linked
+          # without pulling in all of libpython's transitive dependencies (zlib, etc.)
           PKG_CONFIG_LIBDIR="${TALLOC_PREFIX}/lib/pkgconfig" \
           make -C src proot GIT=false V=1 HAS_SWIG= \
             CC="${NDK_CC}" \
