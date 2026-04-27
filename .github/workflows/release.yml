@@ -161,7 +161,7 @@ jobs:
             --cross-answers=cross-answers.txt \
             --disable-python \
             --prefix="${TALLOC_PREFIX}"
-          PYTHONHASHSEED=1 python3 buildtools/bin/waf build
+          PYTHONHASHSEED=1 python3 buildtools/bin/waf build --target=talloc
           PYTHONHASHSEED=1 python3 buildtools/bin/waf install
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
@@ -250,7 +250,7 @@ jobs:
             --cross-answers=cross-answers.txt \
             --disable-python \
             --prefix="${TALLOC_PREFIX}"
-          PYTHONHASHSEED=1 python3 buildtools/bin/waf build
+          PYTHONHASHSEED=1 python3 buildtools/bin/waf build --target=talloc
           PYTHONHASHSEED=1 python3 buildtools/bin/waf install
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
