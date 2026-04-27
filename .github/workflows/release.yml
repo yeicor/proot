@@ -2,8 +2,11 @@ name: Build and Release
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
     inputs:
       tag_name:
@@ -120,11 +123,12 @@ jobs:
           AR="${{ matrix.cross_prefix }}ar" \
           RANLIB="${{ matrix.cross_prefix }}ranlib" \
           STRIP="${{ matrix.cross_prefix }}strip" \
+          PYTHONHASHSEED=1 \
           python3 buildtools/bin/waf configure \
             --cross-compile \
             --prefix="${TALLOC_PREFIX}"
-          python3 buildtools/bin/waf build
-          python3 buildtools/bin/waf install
+          PYTHONHASHSEED=1 python3 buildtools/bin/waf build
+          PYTHONHASHSEED=1 python3 buildtools/bin/waf install
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
 
@@ -175,11 +179,12 @@ jobs:
           AR="${NDK_AR}" \
           RANLIB="${NDK_RANLIB}" \
           STRIP="${NDK_STRIP}" \
+          PYTHONHASHSEED=1 \
           python3 buildtools/bin/waf configure \
             --cross-compile \
             --prefix="${TALLOC_PREFIX}"
-          python3 buildtools/bin/waf build
-          python3 buildtools/bin/waf install
+          PYTHONHASHSEED=1 python3 buildtools/bin/waf build
+          PYTHONHASHSEED=1 python3 buildtools/bin/waf install
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
 
@@ -227,6 +232,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
