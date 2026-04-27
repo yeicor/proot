@@ -8,7 +8,9 @@ SRC    = $(dir $(firstword $(MAKEFILE_LIST)))
 GIT      = git
 RM       = rm
 INSTALL  = install
-CC       ?= $(CROSS_COMPILE)gcc
+ifeq ($(origin CC), default)
+CC = $(CROSS_COMPILE)gcc
+endif
 LD       = $(CC)
 STRIP    ?= $(CROSS_COMPILE)strip
 OBJCOPY  ?= $(CROSS_COMPILE)objcopy
@@ -16,7 +18,7 @@ OBJDUMP  ?= $(CROSS_COMPILE)objdump
 
 override CPPFLAGS += -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I. -I$(VPATH)
 CFLAGS   += -Wall -Wextra -O2
-LDFLAGS  += -ltalloc -Wl,-z,noexecstack
+override LDFLAGS  += -ltalloc -Wl,-z,noexecstack
 
 OBJECTS += \
 	cli/cli.o		\
