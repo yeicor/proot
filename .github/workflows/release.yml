@@ -173,7 +173,7 @@ jobs:
           # Compile talloc.c directly using the config.h waf configure generated.
           "${TALLOC_CC}" \
             -I. -Ilib/replace -Ibin/default \
-            -DHAVE_CONFIG_H -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 \
+            -DHAVE_CONFIG_H -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D__STDC_WANT_LIB_EXT1__=1 \
             -O2 -c talloc.c -o talloc.o
           "${TALLOC_AR}" rcs libtalloc.a talloc.o
 
@@ -288,7 +288,7 @@ jobs:
           # Compile talloc.c directly using the config.h waf configure generated.
           "${NDK_CC}" \
             -I. -Ilib/replace -Ibin/default \
-            -DHAVE_CONFIG_H -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 \
+            -DHAVE_CONFIG_H -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D__STDC_WANT_LIB_EXT1__=1 \
             -O2 -c talloc.c -o talloc.o
           "${NDK_AR}" rcs libtalloc.a talloc.o
 
