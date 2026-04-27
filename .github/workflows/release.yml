@@ -75,7 +75,8 @@ jobs:
             ndk_target: "i686-linux-android21"
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
@@ -112,6 +113,10 @@ jobs:
       - name: Build talloc from source (Linux cross)
         if: matrix.build_type == 'linux-cross'
         run: |
+          TALLOC_CC="${{ matrix.cross_prefix }}gcc"
+          TALLOC_AR="${{ matrix.cross_prefix }}ar"
+          TALLOC_RANLIB="${{ matrix.cross_prefix }}ranlib"
+          TALLOC_STRIP="${{ matrix.cross_prefix }}strip"
           TALLOC_PREFIX="${HOME}/talloc-${{ matrix.name }}"
           mkdir -p "${TALLOC_PREFIX}"
 
@@ -122,45 +127,72 @@ jobs:
           # Fix echo -n usage in samba cross-compile helper
           sed -i 's|echo -n|printf|' buildtools/wafsamba/samba_cross.py
 
-          cat > cross-answers.txt <<'EOF'
-Checking uname sysname type: "Linux"
-Checking uname machine type: "dontcare"
-Checking uname release type: "dontcare"
-Checking uname version type: "dontcare"
-Checking simple C program: OK
-building library support: OK
-Checking for large file support: OK
-Checking for -D_FILE_OFFSET_BITS=64: OK
-Checking for WORDS_BIGENDIAN: FAIL
-Checking for C99 vsnprintf: OK
-Checking for HAVE_SECURE_MKSTEMP: OK
-rpath library support: OK
--Wl,--version-script support: FAIL
-Checking correct behavior of strtoll: OK
-Checking correct behavior of strptime: OK
-Checking for HAVE_IFACE_GETIFADDRS: OK
-Checking for HAVE_IFACE_IFCONF: OK
-Checking for HAVE_IFACE_IFREQ: OK
-Checking getconf LFS_CFLAGS: OK
-Checking for large file support without additional flags: OK
-Checking for working strptime: OK
-Checking for HAVE_SHARED_MMAP: OK
-Checking for HAVE_MREMAP: OK
-Checking for HAVE_INCOHERENT_MMAP: OK
-Checking getconf large file support flags work: OK
-EOF
+          printf '%s\n' \
+            'Checking uname sysname type: "Linux"' \
+            'Checking uname machine type: "dontcare"' \
+            'Checking uname release type: "dontcare"' \
+            'Checking uname version type: "dontcare"' \
+            'Checking simple C program: OK' \
+            'building library support: OK' \
+            'Checking for large file support: OK' \
+            'Checking for -D_FILE_OFFSET_BITS=64: OK' \
+            'Checking for WORDS_BIGENDIAN: FAIL' \
+            'Checking for C99 vsnprintf: OK' \
+            'Checking for HAVE_SECURE_MKSTEMP: OK' \
+            'rpath library support: OK' \
+            '-Wl,--version-script support: FAIL' \
+            'Checking correct behavior of strtoll: OK' \
+            'Checking correct behavior of strptime: OK' \
+            'Checking for HAVE_IFACE_GETIFADDRS: OK' \
+            'Checking for HAVE_IFACE_IFCONF: OK' \
+            'Checking for HAVE_IFACE_IFREQ: OK' \
+            'Checking getconf LFS_CFLAGS: OK' \
+            'Checking for large file support without additional flags: OK' \
+            'Checking for working strptime: OK' \
+            'Checking for HAVE_SHARED_MMAP: OK' \
+            'Checking for HAVE_MREMAP: OK' \
+            'Checking for HAVE_INCOHERENT_MMAP: OK' \
+            'Checking getconf large file support flags work: OK' \
+            > cross-answers.txt
 
-          CC="${{ matrix.cross_prefix }}gcc" \
-          AR="${{ matrix.cross_prefix }}ar" \
-          RANLIB="${{ matrix.cross_prefix }}ranlib" \
-          STRIP="${{ matrix.cross_prefix }}strip" \
+          # Run 'waf configure' only to generate the config.h (bin/default/).
+          # We skip 'waf build' entirely: the wscript build() function contains
+          # Python code that fails with NameError for testsuite targets; bypassing
+          # it completely is simpler and more reliable than patching the wscript.
+          CC="${TALLOC_CC}" \
+          AR="${TALLOC_AR}" \
+          RANLIB="${TALLOC_RANLIB}" \
+          STRIP="${TALLOC_STRIP}" \
           PYTHONHASHSEED=1 \
           python3 buildtools/bin/waf configure \
             --cross-compile \
             --cross-answers=cross-answers.txt \
+            --disable-python \
             --prefix="${TALLOC_PREFIX}"
-          PYTHONHASHSEED=1 python3 buildtools/bin/waf build
-          PYTHONHASHSEED=1 python3 buildtools/bin/waf install
+
+          # Compile talloc.c directly using the config.h waf configure generated.
+          "${TALLOC_CC}" \
+            -I. -Ilib/replace -Ibin/default \
+            -DHAVE_CONFIG_H -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D__STDC_WANT_LIB_EXT1__=1 \
+            -O2 -c talloc.c -o talloc.o
+          "${TALLOC_AR}" rcs libtalloc.a talloc.o
+
+          # Install headers, static library and a minimal pkgconfig file.
+          mkdir -p "${TALLOC_PREFIX}/lib/pkgconfig" "${TALLOC_PREFIX}/include"
+          cp libtalloc.a "${TALLOC_PREFIX}/lib/"
+          cp talloc.h "${TALLOC_PREFIX}/include/"
+          printf '%s\n' \
+            "prefix=${TALLOC_PREFIX}" \
+            'exec_prefix=${prefix}' \
+            'libdir=${prefix}/lib' \
+            'includedir=${prefix}/include' \
+            '' \
+            'Name: talloc' \
+            'Description: Samba talloc library' \
+            "Version: ${TALLOC_VERSION}" \
+            'Libs: -L${libdir} -ltalloc' \
+            'Cflags: -I${includedir}' \
+            > "${TALLOC_PREFIX}/lib/pkgconfig/talloc.pc"
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
 
@@ -210,34 +242,38 @@ EOF
           # Fix echo -n usage in samba cross-compile helper
           sed -i 's|echo -n|printf|' buildtools/wafsamba/samba_cross.py
 
-          cat > cross-answers.txt <<'EOF'
-Checking uname sysname type: "Linux"
-Checking uname machine type: "dontcare"
-Checking uname release type: "dontcare"
-Checking uname version type: "dontcare"
-Checking simple C program: OK
-building library support: OK
-Checking for large file support: OK
-Checking for -D_FILE_OFFSET_BITS=64: OK
-Checking for WORDS_BIGENDIAN: FAIL
-Checking for C99 vsnprintf: OK
-Checking for HAVE_SECURE_MKSTEMP: OK
-rpath library support: OK
--Wl,--version-script support: FAIL
-Checking correct behavior of strtoll: OK
-Checking correct behavior of strptime: OK
-Checking for HAVE_IFACE_GETIFADDRS: OK
-Checking for HAVE_IFACE_IFCONF: OK
-Checking for HAVE_IFACE_IFREQ: OK
-Checking getconf LFS_CFLAGS: OK
-Checking for large file support without additional flags: OK
-Checking for working strptime: OK
-Checking for HAVE_SHARED_MMAP: OK
-Checking for HAVE_MREMAP: OK
-Checking for HAVE_INCOHERENT_MMAP: OK
-Checking getconf large file support flags work: OK
-EOF
+          printf '%s\n' \
+            'Checking uname sysname type: "Linux"' \
+            'Checking uname machine type: "dontcare"' \
+            'Checking uname release type: "dontcare"' \
+            'Checking uname version type: "dontcare"' \
+            'Checking simple C program: OK' \
+            'building library support: OK' \
+            'Checking for large file support: OK' \
+            'Checking for -D_FILE_OFFSET_BITS=64: OK' \
+            'Checking for WORDS_BIGENDIAN: FAIL' \
+            'Checking for C99 vsnprintf: OK' \
+            'Checking for HAVE_SECURE_MKSTEMP: OK' \
+            'rpath library support: OK' \
+            '-Wl,--version-script support: FAIL' \
+            'Checking correct behavior of strtoll: OK' \
+            'Checking correct behavior of strptime: OK' \
+            'Checking for HAVE_IFACE_GETIFADDRS: OK' \
+            'Checking for HAVE_IFACE_IFCONF: OK' \
+            'Checking for HAVE_IFACE_IFREQ: OK' \
+            'Checking getconf LFS_CFLAGS: OK' \
+            'Checking for large file support without additional flags: OK' \
+            'Checking for working strptime: OK' \
+            'Checking for HAVE_SHARED_MMAP: OK' \
+            'Checking for HAVE_MREMAP: OK' \
+            'Checking for HAVE_INCOHERENT_MMAP: OK' \
+            'Checking getconf large file support flags work: OK' \
+            > cross-answers.txt
 
+          # Run 'waf configure' only to generate the config.h (bin/default/).
+          # We skip 'waf build' entirely: the wscript build() function contains
+          # Python code that fails with NameError for testsuite targets; bypassing
+          # it completely is simpler and more reliable than patching the wscript.
           CC="${NDK_CC}" \
           AR="${NDK_AR}" \
           RANLIB="${NDK_RANLIB}" \
@@ -246,9 +282,32 @@ EOF
           python3 buildtools/bin/waf configure \
             --cross-compile \
             --cross-answers=cross-answers.txt \
+            --disable-python \
             --prefix="${TALLOC_PREFIX}"
-          PYTHONHASHSEED=1 python3 buildtools/bin/waf build
-          PYTHONHASHSEED=1 python3 buildtools/bin/waf install
+
+          # Compile talloc.c directly using the config.h waf configure generated.
+          "${NDK_CC}" \
+            -I. -Ilib/replace -Ibin/default \
+            -DHAVE_CONFIG_H -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D__STDC_WANT_LIB_EXT1__=1 \
+            -O2 -c talloc.c -o talloc.o
+          "${NDK_AR}" rcs libtalloc.a talloc.o
+
+          # Install headers, static library and a minimal pkgconfig file.
+          mkdir -p "${TALLOC_PREFIX}/lib/pkgconfig" "${TALLOC_PREFIX}/include"
+          cp libtalloc.a "${TALLOC_PREFIX}/lib/"
+          cp talloc.h "${TALLOC_PREFIX}/include/"
+          printf '%s\n' \
+            "prefix=${TALLOC_PREFIX}" \
+            'exec_prefix=${prefix}' \
+            'libdir=${prefix}/lib' \
+            'includedir=${prefix}/include' \
+            '' \
+            'Name: talloc' \
+            'Description: Samba talloc library' \
+            "Version: ${TALLOC_VERSION}" \
+            'Libs: -L${libdir} -ltalloc' \
+            'Cflags: -I${includedir}' \
+            > "${TALLOC_PREFIX}/lib/pkgconfig/talloc.pc"
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
 
@@ -284,7 +343,8 @@ EOF
       - name: Rename binary
         run: cp src/proot proot-${{ matrix.name }}
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: proot-${{ matrix.name }}
           path: proot-${{ matrix.name }}
@@ -301,7 +361,8 @@ EOF
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
