@@ -113,6 +113,10 @@ jobs:
       - name: Build talloc from source (Linux cross)
         if: matrix.build_type == 'linux-cross'
         run: |
+          TALLOC_CC="${{ matrix.cross_prefix }}gcc"
+          TALLOC_AR="${{ matrix.cross_prefix }}ar"
+          TALLOC_RANLIB="${{ matrix.cross_prefix }}ranlib"
+          TALLOC_STRIP="${{ matrix.cross_prefix }}strip"
           TALLOC_PREFIX="${HOME}/talloc-${{ matrix.name }}"
           mkdir -p "${TALLOC_PREFIX}"
 
@@ -122,6 +126,11 @@ jobs:
 
           # Fix echo -n usage in samba cross-compile helper
           sed -i 's|echo -n|printf|' buildtools/wafsamba/samba_cross.py
+
+          # Remove SAMBA_BINARY test-suite targets that fail on cross-compile hosts
+          # (test suites reference functions missing on target platforms)
+          sed -i '/SAMBA_BINARY.*testsuite/,/^[[:space:]]*)[[:space:]]*$/d' wscript
+          sed -i '/SAMBA_BINARY.*testsuite/,/^[[:space:]]*)[[:space:]]*$/d' lib/replace/wscript
 
           printf '%s\n' \
             'Checking uname sysname type: "Linux"' \
@@ -151,18 +160,33 @@ jobs:
             'Checking getconf large file support flags work: OK' \
             > cross-answers.txt
 
-          CC="${{ matrix.cross_prefix }}gcc" \
-          AR="${{ matrix.cross_prefix }}ar" \
-          RANLIB="${{ matrix.cross_prefix }}ranlib" \
-          STRIP="${{ matrix.cross_prefix }}strip" \
+          CC="${TALLOC_CC}" \
+          AR="${TALLOC_AR}" \
+          RANLIB="${TALLOC_RANLIB}" \
+          STRIP="${TALLOC_STRIP}" \
           PYTHONHASHSEED=1 \
           python3 buildtools/bin/waf configure \
             --cross-compile \
             --cross-answers=cross-answers.txt \
             --disable-python \
             --prefix="${TALLOC_PREFIX}"
-          PYTHONHASHSEED=1 python3 buildtools/bin/waf build --target=talloc
+          PYTHONHASHSEED=1 python3 buildtools/bin/waf build
           PYTHONHASHSEED=1 python3 buildtools/bin/waf install
+
+          # Ensure a static library exists for the -static proot link.
+          # Waf may only install the shared library; if so compile talloc.c
+          # directly using the config.h that waf configure already generated.
+          if [ ! -f "${TALLOC_PREFIX}/lib/libtalloc.a" ]; then
+            "${TALLOC_CC}" \
+              -I. -Ilib/replace -Ibin/default \
+              -DHAVE_CONFIG_H -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 \
+              -O2 -c talloc.c -o /tmp/talloc_s.o
+            "${TALLOC_AR}" rcs "${TALLOC_PREFIX}/lib/libtalloc.a" /tmp/talloc_s.o
+            rm -f /tmp/talloc_s.o
+          fi
+
+          # Remove -rpath from pkgconfig so static links don't get dynamic-only flags
+          sed -i 's/-Wl,-rpath[^ ]*//g' "${TALLOC_PREFIX}/lib/pkgconfig/talloc.pc" 2>/dev/null || true
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
 
@@ -212,6 +236,11 @@ jobs:
           # Fix echo -n usage in samba cross-compile helper
           sed -i 's|echo -n|printf|' buildtools/wafsamba/samba_cross.py
 
+          # Remove SAMBA_BINARY test-suite targets that fail on Android (bionic
+          # lacks telldir/seekdir used by replace_testsuite)
+          sed -i '/SAMBA_BINARY.*testsuite/,/^[[:space:]]*)[[:space:]]*$/d' wscript
+          sed -i '/SAMBA_BINARY.*testsuite/,/^[[:space:]]*)[[:space:]]*$/d' lib/replace/wscript
+
           printf '%s\n' \
             'Checking uname sysname type: "Linux"' \
             'Checking uname machine type: "dontcare"' \
@@ -250,8 +279,23 @@ jobs:
             --cross-answers=cross-answers.txt \
             --disable-python \
             --prefix="${TALLOC_PREFIX}"
-          PYTHONHASHSEED=1 python3 buildtools/bin/waf build --target=talloc
+          PYTHONHASHSEED=1 python3 buildtools/bin/waf build
           PYTHONHASHSEED=1 python3 buildtools/bin/waf install
+
+          # Ensure a static library exists for the -static proot link.
+          # Waf may only install the shared library; if so compile talloc.c
+          # directly using the config.h that waf configure already generated.
+          if [ ! -f "${TALLOC_PREFIX}/lib/libtalloc.a" ]; then
+            "${NDK_CC}" \
+              -I. -Ilib/replace -Ibin/default \
+              -DHAVE_CONFIG_H -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 \
+              -O2 -c talloc.c -o /tmp/talloc_s.o
+            "${NDK_AR}" rcs "${TALLOC_PREFIX}/lib/libtalloc.a" /tmp/talloc_s.o
+            rm -f /tmp/talloc_s.o
+          fi
+
+          # Remove -rpath from pkgconfig so static links don't get dynamic-only flags
+          sed -i 's/-Wl,-rpath[^ ]*//g' "${TALLOC_PREFIX}/lib/pkgconfig/talloc.pc" 2>/dev/null || true
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
 
