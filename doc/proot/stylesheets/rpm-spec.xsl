@@ -43,7 +43,7 @@ env LD_SHOW_AUXV=1 true
 cat /proc/cpuinfo
 ./src/proot -V
 ./src/proot -v 1 true
-make -C test
+make -C tests
 
 %clean
 rm -rf %{buildroot}
