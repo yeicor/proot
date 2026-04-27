@@ -24,46 +24,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ---- Linux targets (Ubuntu multiarch, talloc from packages) ----
+          # ---- Linux x86-64 (native build, talloc from apt) ----
 
-          # Linux x86-64 (native)
           - name: linux-x86_64
-            build_type: linux-multiarch
-            cross_compile: ""
-            pkg_config_libdir: "/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig"
-            extra_arch: ""
-            extra_packages: ""
+            build_type: linux-native
+
+          # ---- Linux cross-compilation targets (talloc built from source) ----
 
           # Linux x86 32-bit
           - name: linux-i386
-            build_type: linux-multiarch
-            cross_compile: "i686-linux-gnu-"
-            pkg_config_libdir: "/usr/lib/i386-linux-gnu/pkgconfig:/usr/share/pkgconfig"
-            extra_arch: "i386"
+            build_type: linux-cross
+            cross_prefix: "i686-linux-gnu-"
             extra_packages: "gcc-i686-linux-gnu"
 
           # Linux ARM64
           - name: linux-aarch64
-            build_type: linux-multiarch
-            cross_compile: "aarch64-linux-gnu-"
-            pkg_config_libdir: "/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig"
-            extra_arch: "arm64"
+            build_type: linux-cross
+            cross_prefix: "aarch64-linux-gnu-"
             extra_packages: "gcc-aarch64-linux-gnu"
 
           # Linux ARM 32-bit (hard-float EABI)
           - name: linux-armhf
-            build_type: linux-multiarch
-            cross_compile: "arm-linux-gnueabihf-"
-            pkg_config_libdir: "/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig"
-            extra_arch: "armhf"
+            build_type: linux-cross
+            cross_prefix: "arm-linux-gnueabihf-"
             extra_packages: "gcc-arm-linux-gnueabihf"
-
-          # ---- Linux SH4 (talloc built from source, no multiarch package) ----
-
-          - name: linux-sh4
-            build_type: linux-source-talloc
-            cross_compile: "sh4-linux-gnu-"
-            extra_packages: "gcc-sh4-linux-gnu"
 
           # ---- Android targets (Android NDK, talloc built from source) ----
 
@@ -94,42 +78,34 @@ jobs:
           submodules: recursive
 
       # =========================================================
-      # Linux multiarch targets
+      # Linux x86-64 native build
       # =========================================================
 
-      - name: Add extra dpkg architecture
-        if: matrix.build_type == 'linux-multiarch' && matrix.extra_arch != ''
-        run: sudo dpkg --add-architecture ${{ matrix.extra_arch }}
-
-      - name: Install Linux multiarch dependencies
-        if: matrix.build_type == 'linux-multiarch'
+      - name: Install native build dependencies
+        if: matrix.build_type == 'linux-native'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -qq \
-            libtalloc-dev${{ matrix.extra_arch != '' && format(':{0}', matrix.extra_arch) || '' }} \
-            ${{ matrix.extra_packages }}
+          sudo apt-get install -qq libtalloc-dev
 
-      - name: Build proot (Linux multiarch)
-        if: matrix.build_type == 'linux-multiarch'
+      - name: Build proot (Linux native)
+        if: matrix.build_type == 'linux-native'
         env:
           LDFLAGS: "-static"
-          PKG_CONFIG_LIBDIR: "${{ matrix.pkg_config_libdir }}"
         run: |
-          make -C src proot GIT=false V=1 \
-            CROSS_COMPILE="${{ matrix.cross_compile }}"
+          make -C src proot GIT=false V=1 HAS_SWIG=
 
       # =========================================================
-      # Linux SH4 – build talloc from source, then build proot
+      # Linux cross-compilation targets
       # =========================================================
 
-      - name: Install Linux SH4 dependencies
-        if: matrix.build_type == 'linux-source-talloc'
+      - name: Install Linux cross-compilation dependencies
+        if: matrix.build_type == 'linux-cross'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -qq wget python3 ${{ matrix.extra_packages }}
 
-      - name: Build talloc from source (Linux SH4)
-        if: matrix.build_type == 'linux-source-talloc'
+      - name: Build talloc from source (Linux cross)
+        if: matrix.build_type == 'linux-cross'
         run: |
           TALLOC_PREFIX="${HOME}/talloc-${{ matrix.name }}"
           mkdir -p "${TALLOC_PREFIX}"
@@ -138,10 +114,10 @@ jobs:
           tar xf "talloc-${TALLOC_VERSION}.tar.gz"
           cd "talloc-${TALLOC_VERSION}"
 
-          CC="${{ matrix.cross_compile }}gcc" \
-          AR="${{ matrix.cross_compile }}ar" \
-          RANLIB="${{ matrix.cross_compile }}ranlib" \
-          STRIP="${{ matrix.cross_compile }}strip" \
+          CC="${{ matrix.cross_prefix }}gcc" \
+          AR="${{ matrix.cross_prefix }}ar" \
+          RANLIB="${{ matrix.cross_prefix }}ranlib" \
+          STRIP="${{ matrix.cross_prefix }}strip" \
           python3 buildtools/bin/waf configure \
             --cross-compile \
             --prefix="${TALLOC_PREFIX}"
@@ -150,14 +126,14 @@ jobs:
 
           echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
 
-      - name: Build proot (Linux SH4)
-        if: matrix.build_type == 'linux-source-talloc'
+      - name: Build proot (Linux cross)
+        if: matrix.build_type == 'linux-cross'
         env:
           LDFLAGS: "-static"
         run: |
           PKG_CONFIG_LIBDIR="${TALLOC_PREFIX}/lib/pkgconfig" \
-          make -C src proot GIT=false V=1 \
-            CROSS_COMPILE="${{ matrix.cross_compile }}"
+          make -C src proot GIT=false V=1 HAS_SWIG= \
+            CROSS_COMPILE="${{ matrix.cross_prefix }}"
 
       # =========================================================
       # Android NDK targets
@@ -217,7 +193,7 @@ jobs:
           NDK_OBJDUMP="${TOOLCHAIN}/bin/llvm-objdump"
 
           PKG_CONFIG_LIBDIR="${TALLOC_PREFIX}/lib/pkgconfig" \
-          make -C src proot GIT=false V=1 \
+          make -C src proot GIT=false V=1 HAS_SWIG= \
             CC="${NDK_CC}" \
             LD="${NDK_CC}" \
             AR="${NDK_AR}" \
@@ -292,7 +268,6 @@ jobs:
             | `proot-linux-i386`    | Linux   | x86 (32-bit)             |
             | `proot-linux-aarch64` | Linux   | ARM64                    |
             | `proot-linux-armhf`   | Linux   | ARM (32-bit, hard-float) |
-            | `proot-linux-sh4`     | Linux   | SH4                      |
             | `proot-android-aarch64` | Android | ARM64                  |
             | `proot-android-arm`     | Android | ARM (32-bit)            |
             | `proot-android-x86_64`  | Android | x86-64                 |
@@ -311,3 +286,4 @@ jobs:
           files: |
             artifacts/proot-*
             artifacts/SHA256SUMS
+
