@@ -25,6 +25,22 @@
 #include <stdio.h>     /* printf(3), fflush(3), */
 #include <unistd.h>    /* write(2), */
 
+/* Android Bionic requires the PT_TLS segment alignment to be at least 64 bytes
+ * on 64-bit targets and at least 32 bytes on 32-bit targets.  Declare a
+ * thread-local variable with the required alignment so the linker propagates
+ * it to the segment's p_align field.  Without this a statically-linked binary
+ * aborts at startup with:
+ *   "TLS segment is underaligned: alignment is 8, needs to be at least 64"  (64-bit)
+ *   "TLS segment is underaligned: alignment is 8, needs to be at least 32"  (32-bit)
+ */
+#if defined(__ANDROID__)
+# if defined(__LP64__)
+__thread char __attribute__((aligned(64))) bionic_tls_align_workaround;
+# else
+__thread char __attribute__((aligned(32))) bionic_tls_align_workaround;
+# endif
+#endif
+
 #include "cli/cli.h"
 #include "cli/note.h"
 #include "extension/extension.h"
