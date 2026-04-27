@@ -32,7 +32,7 @@
  *   "TLS segment is underaligned: alignment is 8, needs to be at least 64"
  */
 #if defined(__ANDROID__) && defined(__aarch64__)
-__thread char __attribute__((aligned(64))) __bionic_tls_align_workaround;
+__thread char __attribute__((aligned(64))) bionic_tls_align_workaround;
 #endif
 
 #include "cli/cli.h"
