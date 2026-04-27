@@ -10,6 +10,9 @@ on:
         description: 'Tag name for the release (e.g., v6.0.0)'
         required: true
 
+permissions:
+  contents: read
+
 env:
   TALLOC_VERSION: "2.4.2"
 
