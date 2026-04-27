@@ -196,12 +196,12 @@ jobs:
 
       - name: Build proot (Linux cross)
         if: matrix.build_type == 'linux-cross'
-        env:
-          LDFLAGS: "-static"
         run: |
           PKG_CONFIG_LIBDIR="${TALLOC_PREFIX}/lib/pkgconfig" \
           make -C src proot GIT=false V=1 \
-            CROSS_COMPILE="${{ matrix.cross_prefix }}"
+            CROSS_COMPILE="${{ matrix.cross_prefix }}" \
+            CPPFLAGS="-I${TALLOC_PREFIX}/include" \
+            LDFLAGS="-static -L${TALLOC_PREFIX}/lib"
 
       # =========================================================
       # Android NDK targets
@@ -309,8 +309,6 @@ jobs:
 
       - name: Build proot (Android)
         if: matrix.build_type == 'android'
-        env:
-          LDFLAGS: "-static"
         run: |
           TOOLCHAIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64"
           NDK_CC="${TOOLCHAIN}/bin/${{ matrix.ndk_target }}-clang"
@@ -328,7 +326,9 @@ jobs:
             RANLIB="${NDK_RANLIB}" \
             STRIP="${NDK_STRIP}" \
             OBJCOPY="${NDK_OBJCOPY}" \
-            OBJDUMP="${NDK_OBJDUMP}"
+            OBJDUMP="${NDK_OBJDUMP}" \
+            CPPFLAGS="-I${TALLOC_PREFIX}/include" \
+            LDFLAGS="-static -L${TALLOC_PREFIX}/lib"
 
       # =========================================================
       # Upload the built binary as a workflow artifact
