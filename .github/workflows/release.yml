@@ -1,0 +1,295 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for the release (e.g., v6.0.0)'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TALLOC_VERSION: "2.4.2"
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ---- Linux x86-64 (native build, talloc from apt) ----
+
+          - name: linux-x86_64
+            build_type: linux-native
+
+          # ---- Linux cross-compilation targets (talloc built from source) ----
+
+          # Linux x86 32-bit
+          - name: linux-i386
+            build_type: linux-cross
+            cross_prefix: "i686-linux-gnu-"
+            extra_packages: "gcc-i686-linux-gnu"
+
+          # Linux ARM64
+          - name: linux-aarch64
+            build_type: linux-cross
+            cross_prefix: "aarch64-linux-gnu-"
+            extra_packages: "gcc-aarch64-linux-gnu"
+
+          # Linux ARM 32-bit (hard-float EABI)
+          - name: linux-armhf
+            build_type: linux-cross
+            cross_prefix: "arm-linux-gnueabihf-"
+            extra_packages: "gcc-arm-linux-gnueabihf"
+
+          # ---- Android targets (Android NDK, talloc built from source) ----
+
+          # Android ARM64
+          - name: android-aarch64
+            build_type: android
+            ndk_target: "aarch64-linux-android21"
+
+          # Android ARM 32-bit
+          - name: android-arm
+            build_type: android
+            ndk_target: "armv7a-linux-androideabi21"
+
+          # Android x86-64
+          - name: android-x86_64
+            build_type: android
+            ndk_target: "x86_64-linux-android21"
+
+          # Android x86 32-bit
+          - name: android-x86
+            build_type: android
+            ndk_target: "i686-linux-android21"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      # =========================================================
+      # Linux x86-64 native build
+      # =========================================================
+
+      - name: Install native build dependencies
+        if: matrix.build_type == 'linux-native'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq libtalloc-dev
+
+      - name: Build proot (Linux native)
+        if: matrix.build_type == 'linux-native'
+        env:
+          LDFLAGS: "-static"
+        run: |
+          # HAS_SWIG= disables the Python extension, which cannot be statically linked
+          # without pulling in all of libpython's transitive dependencies (zlib, etc.)
+          make -C src proot GIT=false V=1 HAS_SWIG=
+
+      # =========================================================
+      # Linux cross-compilation targets
+      # =========================================================
+
+      - name: Install Linux cross-compilation dependencies
+        if: matrix.build_type == 'linux-cross'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq wget python3 ${{ matrix.extra_packages }}
+
+      - name: Build talloc from source (Linux cross)
+        if: matrix.build_type == 'linux-cross'
+        run: |
+          TALLOC_PREFIX="${HOME}/talloc-${{ matrix.name }}"
+          mkdir -p "${TALLOC_PREFIX}"
+
+          wget -q "https://www.samba.org/ftp/talloc/talloc-${TALLOC_VERSION}.tar.gz"
+          tar xf "talloc-${TALLOC_VERSION}.tar.gz"
+          cd "talloc-${TALLOC_VERSION}"
+
+          CC="${{ matrix.cross_prefix }}gcc" \
+          AR="${{ matrix.cross_prefix }}ar" \
+          RANLIB="${{ matrix.cross_prefix }}ranlib" \
+          STRIP="${{ matrix.cross_prefix }}strip" \
+          python3 buildtools/bin/waf configure \
+            --cross-compile \
+            --prefix="${TALLOC_PREFIX}"
+          python3 buildtools/bin/waf build
+          python3 buildtools/bin/waf install
+
+          echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
+
+      - name: Build proot (Linux cross)
+        if: matrix.build_type == 'linux-cross'
+        env:
+          LDFLAGS: "-static"
+        run: |
+          # HAS_SWIG= disables the Python extension, which cannot be statically linked
+          # without pulling in all of libpython's transitive dependencies (zlib, etc.)
+          PKG_CONFIG_LIBDIR="${TALLOC_PREFIX}/lib/pkgconfig" \
+          make -C src proot GIT=false V=1 HAS_SWIG= \
+            CROSS_COMPILE="${{ matrix.cross_prefix }}"
+
+      # =========================================================
+      # Android NDK targets
+      # =========================================================
+
+      - name: Install Android build dependencies
+        if: matrix.build_type == 'android'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq wget python3
+
+      - name: Setup Android NDK
+        if: matrix.build_type == 'android'
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+
+      - name: Build talloc from source (Android)
+        if: matrix.build_type == 'android'
+        run: |
+          TOOLCHAIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64"
+          NDK_CC="${TOOLCHAIN}/bin/${{ matrix.ndk_target }}-clang"
+          NDK_AR="${TOOLCHAIN}/bin/llvm-ar"
+          NDK_RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+          NDK_STRIP="${TOOLCHAIN}/bin/llvm-strip"
+          TALLOC_PREFIX="${HOME}/talloc-${{ matrix.name }}"
+          mkdir -p "${TALLOC_PREFIX}"
+
+          wget -q "https://www.samba.org/ftp/talloc/talloc-${TALLOC_VERSION}.tar.gz"
+          tar xf "talloc-${TALLOC_VERSION}.tar.gz"
+          cd "talloc-${TALLOC_VERSION}"
+
+          CC="${NDK_CC}" \
+          AR="${NDK_AR}" \
+          RANLIB="${NDK_RANLIB}" \
+          STRIP="${NDK_STRIP}" \
+          python3 buildtools/bin/waf configure \
+            --cross-compile \
+            --prefix="${TALLOC_PREFIX}"
+          python3 buildtools/bin/waf build
+          python3 buildtools/bin/waf install
+
+          echo "TALLOC_PREFIX=${TALLOC_PREFIX}" >> "$GITHUB_ENV"
+
+      - name: Build proot (Android)
+        if: matrix.build_type == 'android'
+        env:
+          LDFLAGS: "-static"
+        run: |
+          TOOLCHAIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64"
+          NDK_CC="${TOOLCHAIN}/bin/${{ matrix.ndk_target }}-clang"
+          NDK_AR="${TOOLCHAIN}/bin/llvm-ar"
+          NDK_RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+          NDK_STRIP="${TOOLCHAIN}/bin/llvm-strip"
+          NDK_OBJCOPY="${TOOLCHAIN}/bin/llvm-objcopy"
+          NDK_OBJDUMP="${TOOLCHAIN}/bin/llvm-objdump"
+
+          # HAS_SWIG= disables the Python extension, which cannot be statically linked
+          # without pulling in all of libpython's transitive dependencies (zlib, etc.)
+          PKG_CONFIG_LIBDIR="${TALLOC_PREFIX}/lib/pkgconfig" \
+          make -C src proot GIT=false V=1 HAS_SWIG= \
+            CC="${NDK_CC}" \
+            LD="${NDK_CC}" \
+            AR="${NDK_AR}" \
+            RANLIB="${NDK_RANLIB}" \
+            STRIP="${NDK_STRIP}" \
+            OBJCOPY="${NDK_OBJCOPY}" \
+            OBJDUMP="${NDK_OBJDUMP}"
+
+      # =========================================================
+      # Upload the built binary as a workflow artifact
+      # =========================================================
+
+      - name: Rename binary
+        run: cp src/proot proot-${{ matrix.name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proot-${{ matrix.name }}
+          path: proot-${{ matrix.name }}
+
+  # =============================================================
+  # Collect all binaries and publish a GitHub release
+  # =============================================================
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute SHA-256 checksums
+        run: |
+          cd artifacts
+          sha256sum proot-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Determine tag name and pre-release flag
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"             >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true"                         >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "PRoot ${{ steps.tag.outputs.tag }}"
+          prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
+          body: |
+            ## PRoot ${{ steps.tag.outputs.tag }}
+
+            Statically linked, ready-to-use binaries for all supported platforms.
+            No additional runtime dependencies are required.
+
+            | Binary | OS | Architecture |
+            |--------|----|--------------|
+            | `proot-linux-x86_64`  | Linux   | x86-64                   |
+            | `proot-linux-i386`    | Linux   | x86 (32-bit)             |
+            | `proot-linux-aarch64` | Linux   | ARM64                    |
+            | `proot-linux-armhf`   | Linux   | ARM (32-bit, hard-float) |
+            | `proot-android-aarch64` | Android | ARM64                  |
+            | `proot-android-arm`     | Android | ARM (32-bit)            |
+            | `proot-android-x86_64`  | Android | x86-64                 |
+            | `proot-android-x86`     | Android | x86 (32-bit)           |
+
+            ### Quick start
+            ```bash
+            chmod +x proot-linux-x86_64
+            ./proot-linux-x86_64 --help
+            ```
+
+            ### Verify checksums
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
+          files: |
+            artifacts/proot-*
+            artifacts/SHA256SUMS
+
