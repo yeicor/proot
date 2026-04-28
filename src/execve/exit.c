@@ -430,8 +430,17 @@ void translate_execve_exit(Tracee *tracee)
 		poke_reg(tracee, STATE_FLAGS, 0);
 
 #if defined(ARCH_ARM_EABI) && defined(__thumb__)
-		/* Leave ARM thumb mode */
-		tracee->_regs[CURRENT].ARM_cpsr &= ~PSR_T_BIT;
+		/* Leave ARM thumb mode. Use register accessors instead of
+		 * direct struct field references to avoid dependence on host
+		 * kernel headers layout. Ensure PSR_T_BIT is defined. */
+		#ifndef PSR_T_BIT
+		#define PSR_T_BIT (1 << 5)
+		#endif
+		{
+			word_t flags = peek_reg(tracee, CURRENT, STATE_FLAGS);
+			flags &= ~PSR_T_BIT;
+			poke_reg(tracee, STATE_FLAGS, flags);
+		}
 #endif
 
 		/* Restore registers to their current values.  */
