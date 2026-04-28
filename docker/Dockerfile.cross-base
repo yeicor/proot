@@ -18,12 +18,20 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install base cross-compilation packages and talloc
+# Install i386 development packages first (for 32-bit compilation)
+# Enable i386 architecture for 32-bit headers
+RUN dpkg --add-architecture i386 && apt-get update
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    libc6-dev-i386 \
+    linux-libc-dev:i386 \
+    libtalloc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cross-compilation packages separately to avoid conflicts
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     crossbuild-essential-arm64 \
     crossbuild-essential-armhf \
-    libc6-dev-i386 \
-    libtalloc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create working directory
