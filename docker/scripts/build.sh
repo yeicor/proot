@@ -381,15 +381,28 @@ fi
 OUTPUT_DIR="/output"
 mkdir -p "$OUTPUT_DIR"
 
-# Name the binary with architecture suffix
+# Create output subdirectory per architecture/platform so CI can find it
+OUTPUT_SUBDIR="$OUTPUT_DIR/$ARCH-$PLATFORM"
+mkdir -p "$OUTPUT_SUBDIR"
+
+# Copy proot to a standardized path expected by CI
+cp proot "$OUTPUT_SUBDIR/proot"
+
+# Also place a legacy-named binary at the top-level output for local tests
 BINARY_NAME="proot-$ARCH-$PLATFORM"
 cp proot "$OUTPUT_DIR/$BINARY_NAME"
 
-# Strip debug symbols to reduce size
-if command -v strip >/dev/null && [ "$CC" != "gcc -m32" ]; then
-    ${CROSS_COMPILE}strip "$OUTPUT_DIR/$BINARY_NAME" 2>/dev/null || strip "$OUTPUT_DIR/$BINARY_NAME" || echo "Could not strip binary"
+# Strip debug symbols to reduce size using preferred stripper
+STRIP_TOOL="${STRIP:-${CROSS_COMPILE}strip}"
+if [ -n "${STRIP_TOOL}" ] && command -v ${STRIP_TOOL%% *} >/dev/null 2>&1; then
+    # If STRIP_TOOL is a path use it directly, otherwise rely on command lookup
+    ${STRIP_TOOL} "$OUTPUT_SUBDIR/proot" 2>/dev/null || echo "Could not strip binary with $STRIP_TOOL"
+elif command -v strip >/dev/null 2>&1; then
+    strip "$OUTPUT_SUBDIR/proot" 2>/dev/null || echo "Could not strip binary with strip"
+else
+    echo "No strip tool available; binary left unstripped"
 fi
 
 echo "Build completed successfully!"
-echo "Output binary: $OUTPUT_DIR/$BINARY_NAME"
-ls -la "$OUTPUT_DIR/$BINARY_NAME"
+echo "Output binary: $OUTPUT_SUBDIR/proot"
+ls -la "$OUTPUT_SUBDIR/proot"
