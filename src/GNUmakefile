@@ -16,9 +16,19 @@ OBJDUMP  ?= $(CROSS_COMPILE)objdump
 
 CPPFLAGS += -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I. -I$(VPATH)
 CFLAGS   += -Wall -Wextra -O2
-LDFLAGS  += -ltalloc -Wl,-z,noexecstack
+LDFLAGS  += -Wl,-z,noexecstack
+TALLOC_LIBS ?= -ltalloc
+LDLIBS   += $(TALLOC_LIBS)
+
+# Support for static builds
+ifdef STATIC_BUILD
+    CFLAGS += -static
+    LDFLAGS += -static
+    TALLOC_LIBS = -ltalloc
+endif
 
 OBJECTS += \
+	android_static_compat.o \
 	cli/cli.o		\
 	cli/proot.o		\
 	cli/note.o		\
@@ -92,16 +102,22 @@ endef
 $(eval $(call define_from_arch.h,,HAS_LOADER_32BIT))
 $(eval $(call define_from_arch.h,,HAS_POKEDATA_WORKAROUND))
 
+PROOT_DISABLE_LOADER_32BIT ?= 0
+
 ifdef PROOT_UNBUNDLE_LOADER
   CFLAGS += "-DPROOT_UNBUNDLE_LOADER=\"$(PROOT_UNBUNDLE_LOADER)\""
 proot: | loader/loader
+ifeq ($(PROOT_DISABLE_LOADER_32BIT),0)
 ifdef HAS_LOADER_32BIT
 proot: | loader/loader-m32
 endif
+endif
 else
   OBJECTS += loader/loader-wrapped.o
+ifeq ($(PROOT_DISABLE_LOADER_32BIT),0)
 ifdef HAS_LOADER_32BIT
   OBJECTS += loader/loader-m32-wrapped.o
+endif
 endif
 endif
 
@@ -165,12 +181,13 @@ build.h: $(CHECK_RESULTS)
 	$(Q)echo "#endif /* BUILD_H */" >> $@
 
 BUILD_ID_NONE := $(shell if ld --build-id=none --version >/dev/null 2>&1; then echo ',--build-id=none'; fi)
+ROSEGMENT_SUPPORT := $(shell if ld --rosegment --version >/dev/null 2>&1; then echo ',--rosegment'; fi)
 
 ######################################################################
 # Build rules
 
 COMPILE = $($(quiet)CC) $(CPPFLAGS) $(CFLAGS) -MD -c $(SRC)$< -o $@
-LINK    = $($(quiet)LD) -o $@ $^ $(LDFLAGS)
+LINK    = $($(quiet)LD) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 OBJIFY = $($(quiet)GEN)									\
 	$(OBJCOPY)									\
@@ -186,7 +203,7 @@ proot: $(OBJECTS)
 
 # Special case to compute which files depend on the auto-generated
 # file "build.h".
-USE_BUILD_H := $(patsubst $(SRC)%.c,%.o,$(shell egrep -sl 'include[[:space:]]+"build.h"' $(patsubst %.o,$(SRC)%.c,$(OBJECTS))))
+USE_BUILD_H := $(patsubst $(SRC)%.c,%.o,$(shell grep -E -sl 'include[[:space:]]+"build.h"' $(patsubst %.o,$(SRC)%.c,$(OBJECTS))))
 $(USE_BUILD_H): build.h
 
 %.o: %.c
@@ -206,7 +223,7 @@ $(eval $(call define_from_arch.h,$1,LOADER_ARCH_CFLAGS))
 $(eval $(call define_from_arch.h,$1,LOADER_ADDRESS))
 
 LOADER_CFLAGS$1  += -fPIC -ffreestanding $(LOADER_ARCH_CFLAGS$1)
-LOADER_LDFLAGS$1 += -static -nostdlib -Wl$(BUILD_ID_NONE),-Ttext=$(LOADER_ADDRESS$1),--rosegment,-z,noexecstack
+LOADER_LDFLAGS$1 += -static -nostdlib -Wl$(BUILD_ID_NONE),-Ttext=$(LOADER_ADDRESS$1)$(ROSEGMENT_SUPPORT),-z,noexecstack
 
 loader/loader$1.o: loader/loader.c
 	@mkdir -p $$(dir $$@)
@@ -230,8 +247,10 @@ endef
 
 $(eval $(build_loader))
 
+ifeq ($(PROOT_DISABLE_LOADER_32BIT),0)
 ifdef HAS_LOADER_32BIT
 $(eval $(call build_loader,-m32))
+endif
 endif
 
 loader/loader-info.c: loader/loader

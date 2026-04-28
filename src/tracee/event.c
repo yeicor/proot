@@ -646,7 +646,7 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 		case SIGSYS: {
 			siginfo_t siginfo = {};
 			ptrace(PTRACE_GETSIGINFO, tracee->pid, NULL, &siginfo);
-			if (siginfo.si_code == SYS_SECCOMP) {
+				if (siginfo.si_code == PROOT_SYS_SECCOMP) {
 				/* Signal cannot happen when we're inside syscall,
 				 * tracee would have to exit from syscall first.
 				 * Execute exit handler now if seccomp triggered sysexit skip.  */

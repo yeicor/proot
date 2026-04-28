@@ -22,7 +22,7 @@
 
 #include <assert.h>     /* assert(3), */
 #include <talloc.h>     /* talloc_*, */
-#include <sys/queue.h>  /* LIST_*, */
+#include "queue_compat.h"  /* LIST_*, */
 #include <strings.h>    /* bzero(3), */
 
 #include "extension/extension.h"

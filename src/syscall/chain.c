@@ -21,7 +21,7 @@
  */
 
 #include <talloc.h>     /* talloc*, */
-#include <sys/queue.h>  /* STAILQ_*, */
+#include "queue_compat.h"  /* STAILQ_*, */
 #include <errno.h>      /* E*, */
 #include <assert.h>     /* assert(3), */
 

@@ -27,7 +27,7 @@
 #include <assert.h>   /* assert(3), */
 #include <limits.h>   /* PATH_MAX, */
 #include <errno.h>    /* E* */
-#include <sys/queue.h> /* CIRCLEQ_*, */
+#include "queue_compat.h" /* CIRCLEQ_*, */
 #include <talloc.h>   /* talloc_*, */
 
 #include "path/binding.h"

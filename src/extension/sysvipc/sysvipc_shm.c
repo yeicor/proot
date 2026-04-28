@@ -22,7 +22,7 @@
 #include <fcntl.h> /* open, fcntl */
 
 #ifdef __ANDROID__
-#include <linux/ashmem.h> /* ASHMEM_* */
+#include "ashmem_compat.h"
 #else
 #include <unistd.h> /* ftruncate */
 #endif
@@ -485,9 +485,8 @@ int sysvipc_shmctl(Tracee *tracee, struct SysVIpcConfig *config)
 	int cmd = peek_reg(tracee, CURRENT, SYSARG_2);
 	word_t buf = peek_reg(tracee, CURRENT, SYSARG_3);
 	
-	switch (cmd) {
+	switch (cmd & ~SYSVIPC_IPC_64) {
 	case IPC_RMID:
-	case IPC_RMID | SYSVIPC_IPC_64:
 	{
 		/* Perform rmid only if this region is not mapped,
 		 * otherwise set flag to do so once all maps are unmapped */

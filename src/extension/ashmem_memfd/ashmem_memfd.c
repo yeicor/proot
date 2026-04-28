@@ -1,12 +1,13 @@
 #include <stdlib.h>
 #include <signal.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/syscall.h>  /* __NR_memfd_create,  */
-#include <linux/ashmem.h> /* ASHMEM_GET_SIZE,  */
 #include <linux/memfd.h>  /* MFD_CLOEXEC  */
 
 #include <talloc.h>
 
+#include "ashmem_compat.h"
 #include "extension/extension.h"
 #include "path/path.h"
 #include "tracee/mem.h"
@@ -137,6 +138,7 @@ static void ashmem_memfd_handle_syscall(Extension *extension) {
 			poke_reg(tracee, SYSARG_2, ASHMEM_SET_SIZE);
 		}
 	}
+		/* fall through */
 	case PR_fstat:
 		ashmem_memfd_handle_stat(extension, tracee, peek_reg(tracee, CURRENT, SYSARG_1), SYSARG_2);
 		break;
@@ -195,6 +197,7 @@ int ashmem_memfd_callback(Extension *extension, ExtensionEvent event, intptr_t d
 		AshmemMemfdState *state = talloc_get_type_abort(extension->config, AshmemMemfdState);
 		state->memfd_supported = old_state->memfd_supported;
 	}
+		/* fall through */
 
 	case SYSCALL_ENTER_END:
 		ashmem_memfd_handle_syscall(extension);

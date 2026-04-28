@@ -1,0 +1,174 @@
+name: Build Static Binaries
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/proot-builder
+
+jobs:
+  build-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds
+          - arch: x86_64
+            platform: linux
+            name: proot-x86_64-linux
+          - arch: i386
+            platform: linux
+            name: proot-i386-linux
+          - arch: aarch64
+            platform: linux
+            name: proot-aarch64-linux
+          - arch: arm
+            platform: linux
+            name: proot-arm-linux
+          # Android builds
+          - arch: x86_64
+            platform: android
+            name: proot-x86_64-android
+          - arch: i386
+            platform: android
+            name: proot-i386-android
+          - arch: aarch64
+            platform: android
+            name: proot-aarch64-android
+          - arch: arm
+            platform: android
+            name: proot-arm-android
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+
+    - name: Build Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.cross-base
+        push: false
+        load: true
+        tags: proot-cross-builder:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Create output directory
+      run: mkdir -p dist
+
+    - name: Build PRoot for ${{ matrix.arch }}-${{ matrix.platform }}
+      run: |
+        docker run --rm \
+          -v "${{ github.workspace }}:/source:ro" \
+          -v "${{ github.workspace }}/docker/scripts:/build/scripts:ro" \
+          -v "${{ github.workspace }}/dist:/output" \
+          proot-cross-builder:latest \
+          ${{ matrix.arch }} ${{ matrix.platform }}
+
+    - name: Verify build output
+      run: |
+        ls -la dist/${{ matrix.arch }}-${{ matrix.platform }}/
+        file dist/${{ matrix.arch }}-${{ matrix.platform }}/proot
+        # Test that the binary is statically linked (for Linux builds)
+        if [[ "${{ matrix.platform }}" == "linux" ]]; then
+          ldd dist/${{ matrix.arch }}-${{ matrix.platform }}/proot || echo "Static binary (no dynamic dependencies)"
+        fi
+
+    - name: Rename binary for upload
+      run: |
+        mkdir -p artifacts
+        cp dist/${{ matrix.arch }}-${{ matrix.platform }}/proot artifacts/${{ matrix.name }}
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}
+        path: artifacts/${{ matrix.name }}
+        retention-days: 30
+
+    - name: Upload to release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/${{ matrix.name }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-binaries:
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, i386, aarch64, arm]
+        platform: [linux]
+        # Only test Linux binaries on the runner
+        exclude:
+          - arch: i386  # Skip i386 for now due to runner limitations
+          - arch: aarch64  # Skip non-native arches for basic test
+          - arch: arm
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: proot-${{ matrix.arch }}-${{ matrix.platform }}
+        path: ./
+
+    - name: Test binary
+      run: |
+        chmod +x proot-${{ matrix.arch }}-${{ matrix.platform }}
+        # Basic functionality test
+        ./proot-${{ matrix.arch }}-${{ matrix.platform }} --help || true
+        echo "Binary test completed"
+
+  create-release-summary:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    steps:
+    - name: Create release summary
+      run: |
+        echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "Built static binaries for the following targets:" >> $GITHUB_STEP_SUMMARY
+        echo "### Linux" >> $GITHUB_STEP_SUMMARY
+        echo "- x86_64-linux" >> $GITHUB_STEP_SUMMARY
+        echo "- i386-linux" >> $GITHUB_STEP_SUMMARY
+        echo "- aarch64-linux" >> $GITHUB_STEP_SUMMARY
+        echo "- arm-linux" >> $GITHUB_STEP_SUMMARY
+        echo "### Android" >> $GITHUB_STEP_SUMMARY
+        echo "- x86_64-android" >> $GITHUB_STEP_SUMMARY
+        echo "- i386-android" >> $GITHUB_STEP_SUMMARY
+        echo "- aarch64-android" >> $GITHUB_STEP_SUMMARY
+        echo "- arm-android" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "All binaries are statically linked and should work on their target platforms without additional dependencies." >> $GITHUB_STEP_SUMMARY

@@ -281,9 +281,8 @@ int sysvipc_msgctl(Tracee *tracee, struct SysVIpcConfig *config) {
 	int cmd = peek_reg(tracee, CURRENT, SYSARG_2);
 	word_t buf = peek_reg(tracee, CURRENT, SYSARG_3);
 	
-	switch (cmd) {
+	switch (cmd & ~SYSVIPC_IPC_64) {
 	case IPC_RMID:
-	case IPC_RMID | SYSVIPC_IPC_64:
 	{
 		Tracee *waiting_tracee;
 		struct SysVIpcConfig *waiting_config;
@@ -302,7 +301,6 @@ int sysvipc_msgctl(Tracee *tracee, struct SysVIpcConfig *config) {
 		return 0;
 	}
 	case IPC_STAT:
-	case IPC_STAT | SYSVIPC_IPC_64:
 	{
 		int status = write_data(tracee, buf, &queue->stats, sizeof(struct msqid_ds));
 		if (status < 0) return status;

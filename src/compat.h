@@ -258,8 +258,21 @@
 #    ifndef NT_ARM_SYSTEM_CALL
 #        define NT_ARM_SYSTEM_CALL		0x404
 #    endif
-#    ifndef SYS_SECCOMP
-#        define SYS_SECCOMP 1
+#    ifndef PROOT_SYS_SECCOMP
+#        define PROOT_SYS_SECCOMP 1
+#    endif
+#    ifndef MSG_EXCEPT
+#        define MSG_EXCEPT 020000
+#    endif
+#    ifndef MSG_COPY
+#        define MSG_COPY 040000
+#    endif
+#    ifndef TEMP_FAILURE_RETRY
+#        define TEMP_FAILURE_RETRY(expression) \
+		({ long int __result; \
+		   do __result = (long int) (expression); \
+		   while (__result == -1L && errno == EINTR); \
+		   __result; })
 #    endif
 
 #endif /* COMPAT_H */

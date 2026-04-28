@@ -17,6 +17,14 @@
 #include "tracee/statx.h"
 #include "path/path.h"
 
+#ifdef __GLIBC__
+typedef struct statfs64 proot_statfs_t;
+#define proot_statfs statfs64
+#else
+typedef struct statfs proot_statfs_t;
+#define proot_statfs statfs
+#endif
+
 static int handle_seccomp_event_common(Tracee *tracee);
 
 /**
@@ -244,7 +252,7 @@ static int handle_seccomp_event_common(Tracee *tracee)
 		char path[PATH_MAX];
 		char original[PATH_MAX];
 		char devshm_path[PATH_MAX];
-		struct statfs64 my_statfs64;
+		proot_statfs_t my_statfs64;
 		struct compat_statfs my_statfs;
 		size = read_string(tracee, original, peek_reg(tracee, CURRENT, SYSARG_1), PATH_MAX);
 		if (size < 0) {
@@ -257,7 +265,7 @@ static int handle_seccomp_event_common(Tracee *tracee)
 		}
             	translate_path(tracee, path, AT_FDCWD, original, true);
 		errno = 0;
-		status = statfs64(path, &my_statfs64); 
+		status = proot_statfs(path, &my_statfs64);
 		if (errno != 0) {
 			set_result_after_seccomp(tracee, -errno);
 			break;

@@ -23,7 +23,7 @@
 #ifndef EXTENSION_H
 #define EXTENSION_H
 
-#include <sys/queue.h> /* LIST_, */
+#include "queue_compat.h" /* LIST_, */
 #include <stdint.h>    /* intptr_t, */
 
 #include "tracee/tracee.h"

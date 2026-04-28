@@ -1,0 +1,57 @@
+# Base Docker image for cross-compilation
+FROM ubuntu:22.04
+
+# Install base dependencies
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    build-essential \
+    git \
+    wget \
+    curl \
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    cmake \
+    file \
+    unzip \
+    python3 \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install base cross-compilation packages and talloc
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    crossbuild-essential-arm64 \
+    crossbuild-essential-armhf \
+    libc6-dev-i386 \
+    libtalloc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create working directory
+WORKDIR /build
+
+# Set up environment for cross-compilation
+ENV CROSS_COMPILE_X86_64=""
+ENV CROSS_COMPILE_I386="CC=gcc -m32"
+ENV CROSS_COMPILE_ARM64="CROSS_COMPILE=aarch64-linux-gnu-"
+ENV CROSS_COMPILE_ARM="CROSS_COMPILE=arm-linux-gnueabihf-"
+
+# Android NDK for Android builds
+ENV ANDROID_NDK_VERSION=r25c
+ENV ANDROID_NDK_URL=https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip
+ENV ANDROID_NDK_ROOT=/opt/android-ndk
+
+RUN wget -q ${ANDROID_NDK_URL} -O android-ndk.zip && \
+    unzip -q android-ndk.zip -d /opt/ && \
+    mv /opt/android-ndk-${ANDROID_NDK_VERSION} ${ANDROID_NDK_ROOT} && \
+    rm android-ndk.zip
+
+# Set up Android toolchain environment variables
+ENV ANDROID_NDK_TOOLCHAIN_X86_64=${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang
+ENV ANDROID_NDK_TOOLCHAIN_X86=${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android21-clang
+ENV ANDROID_NDK_TOOLCHAIN_ARM64=${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+ENV ANDROID_NDK_TOOLCHAIN_ARM=${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang
+
+# Create scripts directory
+RUN mkdir -p /build/scripts
+
+ENTRYPOINT ["/build/scripts/build.sh"]

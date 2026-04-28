@@ -26,7 +26,7 @@
 #include <sys/types.h> /* pid_t, size_t, */
 #include <sys/user.h>  /* struct user*, */
 #include <stdbool.h>   /* bool,  */
-#include <sys/queue.h> /* LIST_*, */
+#include "queue_compat.h" /* LIST_*, */
 #include <sys/ptrace.h>/* enum __ptrace_request */
 #include <talloc.h>    /* talloc_*, */
 #include <stdint.h>    /* *int*_t, */

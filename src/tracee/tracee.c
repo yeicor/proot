@@ -26,7 +26,7 @@
 #include <assert.h>     /* assert(3), */
 #include <string.h>     /* bzero(3), */
 #include <stdbool.h>    /* bool, true, false, */
-#include <sys/queue.h>  /* LIST_*,  */
+#include "queue_compat.h"  /* LIST_*,  */
 #include <talloc.h>     /* talloc_*, */
 #include <signal.h>     /* kill(2), SIGKILL, */
 #include <sys/ptrace.h> /* ptrace(2), PTRACE_*, */

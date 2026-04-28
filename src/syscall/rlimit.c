@@ -21,6 +21,7 @@
  */
 
 #include <stdbool.h>		/* bool, */
+#include <inttypes.h>		/* PRIu64, */
 #include <sys/time.h>		/* prlimit(2), */
 #include <sys/resource.h>	/* prlimit(2), */
 
@@ -29,6 +30,14 @@
 #include "tracee/mem.h"
 #include "tracee/abi.h"
 #include "cli/note.h"
+
+#ifdef __GLIBC__
+typedef struct rlimit64 proot_rlimit_t;
+#define proot_prlimit prlimit64
+#else
+typedef struct rlimit proot_rlimit_t;
+#define proot_prlimit prlimit
+#endif
 
 /**
  * Set PRoot's stack soft limit to @tracee's one if this latter is
@@ -58,7 +67,7 @@
  */
 int translate_setrlimit_exit(const Tracee *tracee, bool is_prlimit)
 {
-	struct rlimit64 proot_stack;
+	proot_rlimit_t proot_stack;
 	word_t resource;
 	word_t address;
 	word_t tracee_stack_limit;
@@ -94,7 +103,7 @@ int translate_setrlimit_exit(const Tracee *tracee, bool is_prlimit)
 		return -errno;
 
 	/* Get current PRoot's stack limit.  */
-	status = prlimit64(0, RLIMIT_STACK, NULL, &proot_stack);
+	status = proot_prlimit(0, RLIMIT_STACK, NULL, &proot_stack);
 	if (status < 0) {
 		VERBOSE(tracee, 1, "can't get stack limit.");
 		return 0; /* Not fatal.  */
@@ -107,11 +116,11 @@ int translate_setrlimit_exit(const Tracee *tracee, bool is_prlimit)
 	proot_stack.rlim_cur = tracee_stack_limit;
 
 	/* Increase current PRoot's stack limit.  */
-	status = prlimit64(0, RLIMIT_STACK, &proot_stack, NULL);
+	status = proot_prlimit(0, RLIMIT_STACK, &proot_stack, NULL);
 	if (status < 0)
 		VERBOSE(tracee, 1, "can't set stack limit.");
 	return 0; /* Not fatal.  */
 
-	VERBOSE(tracee, 1, "stack soft limit increased to %llu bytes", proot_stack.rlim_cur);
+	VERBOSE(tracee, 1, "stack soft limit increased to %" PRIu64 " bytes", (uint64_t) proot_stack.rlim_cur);
 	return 0;
 }

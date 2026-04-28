@@ -4,7 +4,7 @@
 #include "tracee/tracee.h"
 #include "sysvipc_sys.h"
 
-#include <sys/queue.h>
+#include "queue_compat.h"
 #include <sys/msg.h>
 #include <stdint.h>
 #include <uchar.h>
@@ -268,4 +268,3 @@ void sysvipc_shm_fill_proc(FILE *proc_file, struct SysVIpcNamespace *ipc_namespa
 int sysvipc_shm_namespace_destructor(struct SysVIpcNamespace *ipc_namespace);
 
 #endif // SYSVIPC_INTERNAL_H
-

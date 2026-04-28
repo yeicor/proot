@@ -30,7 +30,7 @@
 #include <linux/seccomp.h> /* SECCOMP_MODE_FILTER, */
 #include <linux/filter.h>  /* struct sock_*, */
 #include <linux/audit.h>   /* AUDIT_, */
-#include <sys/queue.h>     /* LIST_FOREACH, */
+#include "queue_compat.h"  /* LIST_FOREACH, */
 #include <sys/types.h>     /* size_t, */
 #include <talloc.h>        /* talloc_*, */
 #include <errno.h>         /* E*, */
