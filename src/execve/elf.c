@@ -29,6 +29,7 @@
 #include <assert.h> /* assert(3), */
 #include <talloc.h> /* talloc_*, */
 #include <stdbool.h> /* bool, true, false,  */
+#include <stdlib.h> /* getenv(3) */
 
 #include "execve/elf.h"
 #include "tracee/tracee.h"
