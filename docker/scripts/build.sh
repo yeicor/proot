@@ -5,7 +5,7 @@ set -euo pipefail
 ARCH=${1:-x86_64}
 PLATFORM=${2:-linux}
 BUILD_DIR="/build"
-TALLOC_VERSION="2.4.1"
+TALLOC_VERSION="2.4.3"
 
 echo "Building for architecture: $ARCH, platform: $PLATFORM"
 
@@ -107,233 +107,85 @@ TALLOC_INSTALL_DIR="$BUILD_DIR/deps/$ARCH-$PLATFORM"
 mkdir -p "$TALLOC_INSTALL_DIR/include"
 mkdir -p "$TALLOC_INSTALL_DIR/lib"
 
-# Create a complete talloc stub for all cases (simplified approach)
-echo "Creating minimal talloc stub for cross-compilation..."
+# Build real libtalloc from source (prefer upstream Samba talloc)
+TALLOC_VERSION="2.4.3"
+TALLOC_URL="https://www.samba.org/ftp/talloc/talloc-${TALLOC_VERSION}.tar.gz"
 
-cat > "$TALLOC_INSTALL_DIR/include/talloc.h" << 'EOF'
-#ifndef TALLOC_H
-#define TALLOC_H
+echo "Downloading talloc ${TALLOC_VERSION}..."
+cd /tmp
+if [ ! -f "talloc-${TALLOC_VERSION}.tar.gz" ]; then
+    wget -q "$TALLOC_URL" -O "talloc-${TALLOC_VERSION}.tar.gz" || { echo "Failed to download talloc"; exit 1; }
+fi
+rm -rf "talloc-${TALLOC_VERSION}"
+tar xzf "talloc-${TALLOC_VERSION}.tar.gz"
+cd "talloc-${TALLOC_VERSION}"
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdarg.h>
+# Setup cross-build host triplet and helpers
+TALLOC_HOST=""
+AR_TOOL="${CROSS_COMPILE}ar"
+RANLIB_TOOL="${CROSS_COMPILE}ranlib"
+if [[ "${ARCH}-${PLATFORM}" == *"-android" ]]; then
+    # For Android NDK use llvm-ar/ranlib
+    AR_TOOL="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+    RANLIB_TOOL="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
+fi
 
-// Forward declarations for PRoot types (to support talloc_get_type with type checking)
-typedef struct binding Binding;
-typedef struct tracee Tracee;
+case "$ARCH-$PLATFORM" in
+    x86_64-linux)
+        TALLOC_HOST="x86_64-linux-gnu"
+        ;;
+    i386-linux|x86-linux)
+        TALLOC_HOST="i686-linux-gnu"
+        ;;
+    aarch64-linux|arm64-linux)
+        TALLOC_HOST="aarch64-linux-gnu"
+        ;;
+    arm-linux)
+        TALLOC_HOST="arm-linux-gnueabihf"
+        ;;
+    x86_64-android)
+        TALLOC_HOST="x86_64-linux-android"
+        ;;
+    i386-android|x86-android)
+        TALLOC_HOST="i686-linux-android"
+        ;;
+    aarch64-android|arm64-android)
+        TALLOC_HOST="aarch64-linux-android"
+        ;;
+    arm-android)
+        TALLOC_HOST="armv7a-linux-androideabi"
+        ;;
+esac
 
-// TALLOC_CTX type definition
-typedef void TALLOC_CTX;
+echo "Configuring talloc for host: $TALLOC_HOST"
+# Export tools for configure
+export AR="$AR_TOOL"
+export RANLIB="$RANLIB_TOOL"
 
-// Core talloc functions
-void *talloc_base(const void *context, size_t size);
-char *talloc_strdup(const void *t, const char *p);
-int talloc_free(void *ptr);
-void *talloc_realloc_size(const void *context, void *ptr, size_t size);
-int talloc_asprintf(char **strp, const char *fmt, ...);
-int talloc_vasprintf(char **strp, const char *fmt, va_list ap);
+# Configure and build
+./configure --host="$TALLOC_HOST" --prefix="$TALLOC_INSTALL_DIR" --disable-rpath --disable-python || { echo "talloc configure failed"; exit 1; }
+make -j$(nproc) || { echo "talloc make failed"; exit 1; }
+make install || { echo "talloc make install failed"; }
 
-// talloc utility functions
-void *talloc_named(const void *context, size_t size, const char *fmt, ...);
-void *talloc_init(const char *fmt, ...);
-void talloc_free_children(void *ptr);
-void *talloc_reference(const void *context, const void *ptr);
-int talloc_unlink(const void *context, void *ptr);
-void talloc_report_depth_cb(const void *ptr, int depth, int max_depth, void (*callback)(const void *ptr, int depth, int max_depth, int is_ref, void *private_data), void *private_data);
-void talloc_report_depth_file(const void *ptr, int depth, int max_depth, FILE *f);
+# Ensure libtalloc.a exists; if not, try to assemble a static archive
+if [ ! -f "$TALLOC_INSTALL_DIR/lib/libtalloc.a" ]; then
+    echo "libtalloc.a not found after install, attempting manual archive creation"
+    # Try common locations for object files
+    if [ -d .libs ]; then
+        $AR_TOOL rcs "$TALLOC_INSTALL_DIR/lib/libtalloc.a" .libs/*.o || true
+    elif [ -d src ]; then
+        $AR_TOOL rcs "$TALLOC_INSTALL_DIR/lib/libtalloc.a" src/*.o || true
+    fi
+fi
 
-// Additional talloc functions needed by PRoot
-void *talloc_size(const void *context, size_t size);
-void *talloc_zero_size(const void *context, size_t size);
-size_t talloc_array_length(const void *ptr);
-int talloc_reference_count(const void *ptr);
-void talloc_set_name_const(void *ptr, const char *name);
-void *talloc_autofree_context(void);
-int talloc_set_destructor(void *ptr, int (*destructor)(void *));
-void *talloc_get_type(const void *ptr, const char *name);
-void *talloc_memdup(const void *t, const void *p, size_t size);
-const char *talloc_get_name(const void *ptr);
-size_t talloc_get_size(const void *ptr);
-char *talloc_strndup(const void *t, const char *p, size_t n);
-void talloc_enable_leak_report(void);
-void *talloc_parent(const void *ptr);
-void *talloc_reparent(const void *old_parent, const void *new_parent, void *ptr);
+# Copy headers if not installed
+if [ ! -f "$TALLOC_INSTALL_DIR/include/talloc.h" ]; then
+    install -Dm644 include/talloc.h "$TALLOC_INSTALL_DIR/include/talloc.h" || true
+fi
 
-// Macros
-#define talloc_new(ctx) talloc_base(ctx, 0)  
-#define talloc_zero(ctx, type) (type *)talloc_zero_size(ctx, sizeof(type))
-#define talloc_array(ctx, type, count) (type *)talloc_size(ctx, sizeof(type) * (count))
-#define talloc_zero_array(ctx, type, count) (type *)talloc_zero_size(ctx, sizeof(type) * (count))
-#define talloc_get_type_abort(ptr, type) ((type *)(ptr))
-#define talloc_get_type(ptr, type) ((type *)(ptr))
-#define talloc_realloc(ctx, ptr, type, count) (type *)talloc_realloc_size(ctx, ptr, sizeof(type) * (count))
-
-// Handle talloc(ctx, type) calls by converting to talloc_base with sizeof
-#define talloc(ctx, type) (type *)talloc_base(ctx, sizeof(type))
-
-#endif
-EOF
-
-cat > /tmp/talloc_stub.c << 'EOF'
-#define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-
-// Simple counter for array lengths (basic implementation)
-static size_t array_counter = 0;
-
-void *talloc_base(const void *context, size_t size) {
-    return malloc(size);
-}
-
-char *talloc_strdup(const void *t, const char *p) {
-    return strdup(p);
-}
-
-int talloc_free(void *ptr) {
-    if (ptr) free(ptr);
-    return 0;
-}
-
-void *talloc_realloc_size(const void *context, void *ptr, size_t size) {
-    return realloc(ptr, size);
-}
-
-int talloc_asprintf(char **strp, const char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    int ret = vasprintf(strp, fmt, ap);
-    va_end(ap);
-    return ret;
-}
-
-int talloc_vasprintf(char **strp, const char *fmt, va_list ap) {
-    return vasprintf(strp, fmt, ap);
-}
-
-void *talloc_named(const void *context, size_t size, const char *fmt, ...) {
-    return malloc(size);
-}
-
-void *talloc_init(const char *fmt, ...) {
-    return malloc(1);
-}
-
-void talloc_free_children(void *ptr) {
-    // No-op for stub
-}
-
-void talloc_report_depth_cb(const void *ptr, int depth, int max_depth, 
-    void (*callback)(const void *ptr, int depth, int max_depth, int is_ref, void *private_data), 
-    void *private_data) {
-    // No-op for stub
-}
-
-void talloc_report_depth_file(const void *ptr, int depth, int max_depth, FILE *f) {
-    // No-op for stub
-}
-
-void *talloc_size(const void *context, size_t size) {
-    return malloc(size);
-}
-
-void *talloc_zero_size(const void *context, size_t size) {
-    return calloc(1, size);
-}
-
-size_t talloc_array_length(const void *ptr) {
-    // Return a dummy length - we can't track this without real talloc
-    return array_counter++;
-}
-
-int talloc_unlink(const void *context, void *ptr) {
-    // Return success - no-op for stub
-    return 0;
-}
-
-void *talloc_reference(const void *context, const void *ptr) {
-    // Return the same pointer - no reference counting in stub
-    return (void *)ptr;
-}
-
-int talloc_reference_count(const void *ptr) {
-    // Return 1 to indicate one reference
-    return 1;
-}
-
-void talloc_set_name_const(void *ptr, const char *name) {
-    // No-op for stub
-}
-
-void *talloc_autofree_context(void) {
-    // Return a dummy context - in real talloc this is a special global context
-    static int dummy_context = 0;
-    return &dummy_context;
-}
-
-int talloc_set_destructor(void *ptr, int (*destructor)(void *)) {
-    // Stub implementation - just return success
-    return 0;
-}
-
-void *talloc_get_type(const void *ptr, const char *name) {
-    // Simple cast - in real talloc this checks type safety
-    return (void *)ptr;
-}
-
-void *talloc_memdup(const void *t, const void *p, size_t size) {
-    void *mem = malloc(size);
-    if (mem) {
-        memcpy(mem, p, size);
-    }
-    return mem;
-}
-
-const char *talloc_get_name(const void *ptr) {
-    // Return a dummy name
-    return "talloc_stub";
-}
-
-size_t talloc_get_size(const void *ptr) {
-    // Return a dummy size - we can't track this without real talloc
-    return 0;
-}
-
-void *talloc_parent(const void *ptr) {
-    // Return a dummy parent - in real talloc this tracks parent context
-    // For stub purposes, return NULL (no parent)
-    return NULL;
-}
-
-void *talloc_reparent(const void *old_parent, const void *new_parent, void *ptr) {
-    // Reparent operation - in stub just return the pointer unchanged
-    // Real talloc tracks parent-child relationships
-    return ptr;
-}
-
-char *talloc_strndup(const void *t, const char *p, size_t n) {
-    if (!p) return NULL;
-    size_t len = strlen(p);
-    if (n < len) len = n;
-    char *result = malloc(len + 1);
-    if (result) {
-        memcpy(result, p, len);
-        result[len] = '\0';
-    }
-    return result;
-}
-
-void talloc_enable_leak_report(void) {
-    // No-op for stub - real talloc enables memory leak reporting
-}
-EOF
-
-# Compile the stub
-$CC $CFLAGS -c /tmp/talloc_stub.c -o "$TALLOC_INSTALL_DIR/lib/talloc_stub.o"
-ar rcs "$TALLOC_INSTALL_DIR/lib/libtalloc.a" "$TALLOC_INSTALL_DIR/lib/talloc_stub.o"
+# Basic verify
+ls -la "$TALLOC_INSTALL_DIR/lib" || true
+ls -la "$TALLOC_INSTALL_DIR/include" || true
 
 # Build PRoot
 echo "Building PRoot..."
