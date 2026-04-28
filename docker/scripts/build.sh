@@ -42,18 +42,27 @@ case "$ARCH-$PLATFORM" in
         export CC=${ANDROID_NDK_TOOLCHAIN_X86_64}
         export CXX=${ANDROID_NDK_TOOLCHAIN_X86_64}++
         export CROSS_COMPILE=""
+        export STRIP="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+        export OBJCOPY="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy"
+        export OBJDUMP="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump"
         export CFLAGS="-static -O2 -DANDROID"
         ;;
     i386-android|x86-android)
         export CC=${ANDROID_NDK_TOOLCHAIN_X86}
         export CXX=${ANDROID_NDK_TOOLCHAIN_X86}++
         export CROSS_COMPILE=""
+        export STRIP="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+        export OBJCOPY="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy"
+        export OBJDUMP="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump"
         export CFLAGS="-static -O2 -m32 -DANDROID"
         ;;
     aarch64-android|arm64-android)
-        export CC=${ANDROID_NDK_TOOLCHAIN_AARCH64}
-        export CXX=${ANDROID_NDK_TOOLCHAIN_AARCH64}++
+        export CC=${ANDROID_NDK_TOOLCHAIN_ARM64}
+        export CXX=${ANDROID_NDK_TOOLCHAIN_ARM64}++
         export CROSS_COMPILE=""
+        export STRIP="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+        export OBJCOPY="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy"
+        export OBJDUMP="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump"
         export CFLAGS="-static -O2 -DANDROID"
         export PROOT_DISABLE_LOADER_32BIT=1
         ;;
@@ -61,6 +70,9 @@ case "$ARCH-$PLATFORM" in
         export CC=${ANDROID_NDK_TOOLCHAIN_ARM}
         export CXX=${ANDROID_NDK_TOOLCHAIN_ARM}++
         export CROSS_COMPILE=""
+        export STRIP="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+        export OBJCOPY="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy"
+        export OBJDUMP="/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump"
         export CFLAGS="-static -O2 -DANDROID"
         export PROOT_DISABLE_LOADER_32BIT=1
         ;;

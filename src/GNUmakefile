@@ -189,6 +189,17 @@ ROSEGMENT_SUPPORT := $(shell if ld --rosegment --version >/dev/null 2>&1; then e
 COMPILE = $($(quiet)CC) $(CPPFLAGS) $(CFLAGS) -MD -c $(SRC)$< -o $@
 LINK    = $($(quiet)LD) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+# OBJIFY for Android (LLVM toolchain needs different format handling)
+ifdef ANDROID
+OBJIFY = $($(quiet)GEN)									\
+	$(OBJCOPY)									\
+		--input-target=binary								\
+		--output-target=`env LANG=C $(OBJDUMP) -f cli/cli.o |				\
+			grep 'file format' | awk '{print $$4}' | sed 's/elf64-little/elf64-/' | sed 's/elf32-little/elf32-/'`	\
+		--binary-architecture `env LANG=C $(OBJDUMP) -f cli/cli.o |		\
+				grep architecture | cut -f 1 -d , | awk '{print $$2}'`	\
+		$< $@
+else
 OBJIFY = $($(quiet)GEN)									\
 	$(OBJCOPY)									\
 		--input-target=binary								\
@@ -197,6 +208,7 @@ OBJIFY = $($(quiet)GEN)									\
 		--binary-architecture `env LANG=C $(OBJDUMP) -f cli/cli.o |		\
 				grep architecture | cut -f 1 -d , | awk '{print $$2}'`	\
 		$< $@
+endif
 
 proot: $(OBJECTS)
 	$(LINK)
